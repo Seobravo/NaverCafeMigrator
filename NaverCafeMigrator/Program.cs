@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using NaverCafeMigrator.Config;
 using NaverCafeMigrator.Services;
 
@@ -15,8 +16,9 @@ try
     // 서비스 가져오기
     var cafeService = host.Services.GetRequiredService<INaverCafeApiService>();
     var authService = host.Services.GetRequiredService<INaverAuthService>();
+    var settings = host.Services.GetRequiredService<IOptions<NaverCafeApiSettings>>().Value;
 
-    if(args.Length > 0)
+    if (args.Length > 0)
     {
         var command = args[0].ToLower();
 
@@ -86,6 +88,52 @@ try
                     Console.WriteLine($"메시지: {result.Message}");
                 }
                 break;
+            case "autopost":
+                // 자동 인증 및 게시물 업로드
+                if(args.Length < 2)
+                {
+                    Console.WriteLine("사용법: NaverCafeMigrator.exe autopost <CSV파일경로>");
+                    break;
+                }
+
+                csvPath = args[1];
+
+                if (!File.Exists(csvPath))
+                {
+                    Console.WriteLine($"CSV 파일을 찾을 수 없습니다: {csvPath}");
+                    break;
+                }
+
+                Console.WriteLine($"자동 인증 및 게시물 업로드를 시작합니다...");
+
+                // 자동 인증 흐름 실행
+                var oauthFlow = new OAuthAutoFlow(authService, settings.RedirectUri);
+
+                try
+                {
+                    // 인증 처리 및 토큰 발급
+                    accessToken = await oauthFlow.GetAccessTokenAsync();
+
+                    // 발급된 토큰으로 게시물 업로드
+                    Console.WriteLine("인증 완료! 게시물 업로드를 시작합니다...");
+                    result = await cafeService.PostArticlesFromCsvAsync(csvPath, accessToken);
+
+                    // 결과 출력
+                    Console.WriteLine($"업로드 완료!");
+                    Console.WriteLine($"총 게시물: {result.TotalPosts}");
+                    Console.WriteLine($"성공: {result.SuccessfulPosts}");
+                    Console.WriteLine($"실패: {result.FailedPosts}");
+
+                    if (!string.IsNullOrEmpty(result.Message))
+                    {
+                        Console.WriteLine($"메시지: {result.Message}");
+                    }
+                }
+                catch(Exception ex)
+                {
+                    Console.WriteLine($"자동 인증 중 오류 발생: {ex.Message}");
+                }
+                break;
             default:
                 ShowHelp();
                 break;
@@ -109,8 +157,10 @@ static void ShowHelp()
 {
     Console.WriteLine("사용법:");
     Console.WriteLine("NaverCafeMigrator.exe auth");
-    Console.WriteLine("NaverCafeMigrator.exe token <state> <code>");
+    Console.WriteLine("NaverCafeMigrator.exe token <code> <state>");
     Console.WriteLine("NaverCafeMigrator.exe post <CSV파일경로> <AccessToken>");
+    Console.WriteLine("NaverCafeMigrator.exe autopost <CSV파일경로>");
+    Console.WriteLine("  - autopost: 인증과 게시물 업로드를 한 번에 자동으로 처리합니다.");
     Console.WriteLine("명령어를 입력하지 않으면 도움말이 표시됩니다.");
 }
 
@@ -133,95 +183,4 @@ static IHostBuilder CreateHostBuilder(string[] args)
             services.AddSingleton<INaverAuthService, NaverAuthService>();
             services.AddSingleton<INaverCafeApiService, NaverCafeApiService>();
         });
-}
-
-static async Task StartNaverLogin()
-{
-    Console.WriteLine("\n네이버 로그인을 시작합니다.");
-
-    // 네이버 로그인 URL 생성
-    _currentState = Guid.NewGuid().ToString("N");
-    var authUrl = _authService.GenerateAuthUrl(_currentState);
-
-    Console.WriteLine($"아래 URL을 브라우저에서 열어 네이버 로그인을 완료하세요:");
-    Console.WriteLine(authUrl);
-    Console.WriteLine("\n로그인 후, 리다이렉트된 URL에서 코드 파라미터의 값을 복사해두세요.");
-    Console.WriteLine("그 다음 메뉴에서 '2. 토큰 발급받기'를 선택하세요.");
-}
-
-static async Task GetAccessToken()
-{
-    Console.WriteLine("\n토큰 발급 과정을 시작합니다.");
-
-    if (string.IsNullOrEmpty(_currentState))
-    {
-        Console.WriteLine("먼저 네이버 로그인을 진행해주세요 (메뉴 1번).");
-        return;
-    }
-
-    Console.Write("네이버 로그인 후 받은 코드를 입력하세요: ");
-    var code = Console.ReadLine();
-
-    if (string.IsNullOrEmpty(code))
-    {
-        Console.WriteLine("코드가 입력되지 않았습니다.");
-        return;
-    }
-
-    Console.WriteLine("\n토큰을 발급 받는 중입니다...");
-    var tokenResponse = await _authService.GetAccessTokenAsync(code, _currentState);
-
-    if (!string.IsNullOrEmpty(tokenResponse.Error))
-    {
-        Console.WriteLine($"토큰 발급 실패: {tokenResponse.Error} - {tokenResponse.ErrorDescription}");
-        return;
-    }
-
-    _currentAccessToken = tokenResponse.AccessToken;
-
-    Console.WriteLine("토큰 발급 성공!");
-    Console.WriteLine($"Access Token: {tokenResponse.AccessToken.Substring(0, 10)}...");
-    Console.WriteLine($"Refresh Token: {tokenResponse.RefreshToken.Substring(0, 10)}...");
-    Console.WriteLine($"만료 시간: {tokenResponse.ExpiresIn}초");
-    Console.WriteLine("\n이제 '3. CSV에서 게시물 업로드' 메뉴를 선택하여 게시물을 업로드할 수 있습니다.");
-}
-
-static async Task UploadPostsFromCsv()
-{
-    Console.WriteLine("\nCSV 파일에서 게시물 업로드를 시작합니다.");
-
-    if (string.IsNullOrEmpty(_currentAccessToken))
-    {
-        Console.WriteLine("먼저 토큰을 발급받아야 합니다 (메뉴 1번과 2번을 차례로 진행해주세요).");
-        return;
-    }
-
-    Console.Write("업로드할 CSV 파일의 경로를 입력하세요: ");
-    var csvPath = Console.ReadLine();
-
-    if (string.IsNullOrEmpty(csvPath))
-    {
-        Console.WriteLine("CSV 파일 경로가 입력되지 않았습니다.");
-        return;
-    }
-
-    if (!File.Exists(csvPath))
-    {
-        Console.WriteLine($"CSV 파일을 찾을 수 없습니다: {csvPath}");
-        return;
-    }
-
-    Console.WriteLine($"\n게시물 업로드 중...");
-    var result = await _cafeService.PostArticlesFromCsvAsync(csvPath, _currentAccessToken);
-
-    // 결과 출력
-    Console.WriteLine($"업로드 완료!");
-    Console.WriteLine($"총 게시물: {result.TotalPosts}");
-    Console.WriteLine($"성공: {result.SuccessfulPosts}");
-    Console.WriteLine($"실패: {result.FailedPosts}");
-
-    if (!string.IsNullOrEmpty(result.Message))
-    {
-        Console.WriteLine($"메시지: {result.Message}");
-    }
 }

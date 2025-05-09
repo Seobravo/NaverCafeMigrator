@@ -2,7 +2,7 @@
 
 namespace NaverCafeMigrator.Services
 {
-    interface INaverAuthService
+    public interface INaverAuthService
     {
         string GenerateAuthUrl(string state);
         Task<TokenResponse> GetAccessTokenAsync(string code, string state);
