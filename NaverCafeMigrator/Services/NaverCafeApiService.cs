@@ -54,7 +54,7 @@ namespace NaverCafeMigrator.Services
                 var retryCount = 1;
                 for (int i = 0; i < posts.Count; i++)
                 {
-                    var success = await PostArticleAsync(posts[i].Title, posts[i].Content, accessToken);
+                    var success = await PostArticleAsync(posts[i].Title, posts[i].Content, posts[i].CreatedAt, posts[i].Author, accessToken);
 
                     if(!success)
                     {
@@ -103,7 +103,7 @@ namespace NaverCafeMigrator.Services
             }
         }
 
-        private async Task<bool> PostArticleAsync(string subject, string content, string accessToken)
+        private async Task<bool> PostArticleAsync(string subject, string content, string createAt, string author, string accessToken)
         {
             try
             {
@@ -111,7 +111,7 @@ namespace NaverCafeMigrator.Services
                 var apiUrl = $"{_settings.BaseUrl}/{_settings.CafeClubId}/menu/{_settings.CafeMenuId}/articles";
 
                 // 요청 본문 생성 (네이버 예시 코드와 유사하게 처리)
-                var encodedPostBody = EncodeData(subject, content);
+                var encodedPostBody = EncodeData(subject, content, createAt, author);
 
                 // POST 요청 설정
                 using var bytesContent = new ByteArrayContent(encodedPostBody);
@@ -129,15 +129,16 @@ namespace NaverCafeMigrator.Services
             }
         }
 
-        private byte[] EncodeData(string subject, string content)
+        private byte[] EncodeData(string subject, string content, string createAt, string author)
         {
+            subject += $"[{createAt}][{author}]";
             var byteSubject = HttpUtility.UrlEncode(subject);
             byteSubject = HttpUtility.UrlEncode(byteSubject, Encoding.GetEncoding("EUC-KR"));
 
             var byteContent = HttpUtility.UrlEncode(content);
             byteContent = HttpUtility.UrlEncode(byteContent, Encoding.GetEncoding("EUC-KR"));
 
-            return Encoding.UTF8.GetBytes($"subject={byteSubject}&content={byteContent}");
+            return Encoding.UTF8.GetBytes($"subject={byteSubject}&content={byteContent}&openyn=true");
         }
     }
 }

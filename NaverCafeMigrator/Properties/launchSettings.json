@@ -2,7 +2,7 @@
   "profiles": {
     "NaverCafeMigrator": {
       "commandName": "Project",
-      "commandLineArgs": "autopost C:\\Users\\KangSanHae\\source\\repos\\Seobravo\\LegacyCrawler\\LegacyCrawler\\bin\\Debug\\net9.0\\data\\올릴데이터\\1.csv"
+      "commandLineArgs": "autopost \"C:\\Users\\korea\\바탕 화면\\업로드\\이목사의창\\올리는 파일.csv\""
     }
   }
 }
